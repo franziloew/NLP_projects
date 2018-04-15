@@ -1,6 +1,6 @@
 # Natural Language Processing 
 
-This repo contains some smaller projects in connection with NLP, respectively with everything that has to do with the processing of text data.
+This repo contains some smaller projects using NLP / everything that has to do with the processing of text data.
 
 1. Airbnb reviews (PySpark): In this project I am experimenting with the Apache Spark Framwork for Python (PySpark). I analyse the written reviews of Airbnb Listings in Barcelona. The data comes from the [Inside Airbnb](http://insideairbnb.com/get-the-data.html) project and is freely available. 
 
