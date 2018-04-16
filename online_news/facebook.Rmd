@@ -61,12 +61,13 @@ rm(list=ls())
 col <- rcartocolor::carto_pal(12, "Bold")
 ```
 
+## Load Data
 ```{r}
 df <- read.csv("data/eventbride_18_04_14.csv", comment.char="#", stringsAsFactors=FALSE)
 ```
 
 ## Reduce Dataframe
-```{r}
+```{r message=FALSE, warning=FALSE}
 keeps <- c('faz.net',"focus.de",
            "handelsblatt.com","n-tv.de","spiegel.de",
            "stern.de","sueddeutsche.de",
@@ -85,13 +86,8 @@ df_facebook <- df %>%
   filter(grepl("facebook",title, ignore.case = T))
 ```
 
-```{r fig.height=8, fig.width=12}
-df_facebook %>%
-  group_by(site) %>%
-  tally(sort=T) 
-```
-
 ```{r}
+# Calculate text length (number of words)
 df_facebook$text_length <- sapply(gregexpr("\\S+", 
                                            df_facebook$text), length)
 ```
@@ -99,10 +95,13 @@ df_facebook$text_length <- sapply(gregexpr("\\S+",
 ```{r}
 ggplot(df_facebook, aes(text_length, group=site,
                         color=site)) +
-  geom_density()
+  geom_density() +
+  labs(x="", title = "Word count", color = "")
 ```
 
 ```{r}
+# Filtering
+
 df_facebook <- df_facebook %>%
   filter(text_length > 100) %>%
 
@@ -126,12 +125,11 @@ df_facebook <- df_facebook %>%
 ```{r}
 ggplot(df_facebook, aes(site)) +
   geom_bar(fill = col[3], alpha=0.7) +
-  labs(x="") +
+  labs(x="", title = "Number of Articles") +
   theme(axis.text.x = element_text(angle = 60, size=10))
 ```
 
-### Remove Stopwords, punctuation, etc.
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 clean.text <- function(x)
   {
   # All
@@ -223,8 +221,7 @@ stopwords <- unique(stopwords)
 df_facebook$text_cleaned<- removeWords(df_facebook$text_cleaned, stopwords)
 ```
 
-### Stemming
-```{r }
+```{r}
 stem_text<- function(text, language = "porter", mc.cores = 1) {
   # stem each word in a block of text
   stem_string <- function(str, language) {
@@ -245,7 +242,7 @@ df_facebook$text_cleaned <- stem_text(df_facebook$text_cleaned)
 ```
 
 ## Term Frequency
-```{r}
+```{r message=FALSE, warning=FALSE}
 token <- df_facebook %>%
   group_by(site) %>%
   unnest_tokens(word, text_cleaned) %>%
@@ -256,7 +253,8 @@ token <- df_facebook %>%
 token %>%
   arrange(desc(tf)) %>%
   arrange(site) %>%
-  top_n(10)
+  top_n(5) %>%
+  knitr::kable(align = "l")
 ```
 
 ### Bigrams
@@ -268,7 +266,8 @@ bigrams %>%
   group_by(site) %>%
   count(bigram) %>%
   arrange(desc(n)) %>%
-  top_n(10)
+  top_n(5) %>%
+  knitr::kable(align = "l")
 ```
 
 ## Wordcloud
@@ -286,7 +285,7 @@ textplot_wordcloud(df.corpus, max.word=200,
 pacman::p_load(sentimentr)
 ```
 
-Load dictionary
+### Load dictionary
 
 ```{r message=FALSE, warning=FALSE}
 # Load dictionaries (from: http://wortschatz.uni-leipzig.de/de/download)
@@ -309,9 +308,11 @@ sentiment_df %>% mutate(polarity = as.numeric(polarity)) %>%
   as_key() -> sentiment_df
 ```
 
-We may wish to see the output from sentiment_by line by line with positive/negative sentences highlighted. The highlight function wraps a sentiment_by output to produces a highlighted HTML file (positive = green; negative = pink). Lets have a look at random articles:
+### Apply on Data
 
-```{r}
+We may wish to see the output from sentiment_by line by line with positive/negative sentences highlighted. The highlight function wraps a sentiment_by output to produces a highlighted HTML file (positive = green; negative = pink). Lets have a look at random articles [here](polarity.html).
+
+```{r eval=FALSE, include=FALSE}
 df_facebook %>% 
   group_by(site) %>%
   sample_n(1) %>%
@@ -320,6 +321,7 @@ df_facebook %>%
                polarity_dt = sentiment_df) %>%
   sentimentr::highlight()
 ```
+
 
 Lets apply this on the whole corpus.
 
