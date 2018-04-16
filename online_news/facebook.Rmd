@@ -1,0 +1,356 @@
+---
+title: "Facebook in German online news"
+date: "`r format(Sys.Date())`"
+output: 
+  html_document:
+    theme: "lumen"
+    highlight: "tango"
+    code_folding: show
+    self_contained: true
+---
+
+```{r include=FALSE}
+library(ggplot2)     # Static data visualization
+library(dplyr)       # Data manipulation
+library(tidytext)    # Tidy text mining
+library(stringr)     # String manipulation
+library(lubridate)   # Date and time manipulation
+library(tidyr)       # Reshaping
+library(magrittr)    # Advanced piping
+library(pushoverr)   # Pushover notifications
+library(readr)       # Importing data
+library(data.table)
+library(stm)
+library(tm)
+library(parallel)
+
+library(igraph)
+library(corrplot)
+library(patchwork)
+library(ggpmisc)
+library(ggraph)
+library(ggiraph)
+library(tidygraph)
+library(RColorBrewer) 
+library(ggrepel)
+library(scales)      # Scales
+
+# Theming
+quartzFonts(
+  Roboto =
+    c("Roboto-Light",
+      "Roboto-Bold",
+      "Roboto-Regular",
+      "Roboto-Thin")
+)
+
+theme_set(
+  theme_bw(base_family = "Roboto", base_size = 10) +
+    theme(
+      plot.title = element_text(size = 14,
+                                margin = margin(0, 0, 4, 0, "pt")),
+      plot.subtitle = element_text(size = 8),
+      plot.caption = element_text(size = 6),
+      plot.background   = element_rect("#fafafa", "#fafafa"),
+      panel.background  = element_rect("#fafafa"),
+      panel.border = element_blank()
+    )
+)
+
+rm(list=ls())
+col <- rcartocolor::carto_pal(12, "Bold")
+```
+
+```{r}
+df <- read.csv("data/eventbride_18_04_14.csv", comment.char="#", stringsAsFactors=FALSE)
+```
+
+## Reduce Dataframe
+```{r}
+keeps <- c('faz.net',"focus.de",
+           "handelsblatt.com","n-tv.de","spiegel.de",
+           "stern.de","sueddeutsche.de",
+           "tagesschau.de", "welt.de", "zeit.de")
+
+df <- df %>%
+  mutate(text = body,
+         # Extract site 
+         site = str_extract(source, "(?<='uri': ')[A-z][^']*"),
+         date = as.Date(date)) %>%
+  select(date,title,text,site,url,isDuplicate) %>%
+  filter(site %in% keeps) %>%
+  mutate(title_text = paste(title, text, sep=" "))
+
+df_facebook <- df %>%
+  filter(grepl("facebook",title, ignore.case = T))
+```
+
+```{r fig.height=8, fig.width=12}
+df_facebook %>%
+  group_by(site) %>%
+  tally(sort=T) 
+```
+
+```{r}
+df_facebook$text_length <- sapply(gregexpr("\\S+", 
+                                           df_facebook$text), length)
+```
+
+```{r}
+ggplot(df_facebook, aes(text_length, group=site,
+                        color=site)) +
+  geom_density()
+```
+
+```{r}
+df_facebook <- df_facebook %>%
+  filter(text_length > 100) %>%
+
+  # remove articles that contain daily overviews
+  filter(!grepl("Nachrichten am Morgen", title)) %>%
+  filter(!grepl("Der Morgen live", title)) %>%
+  filter(!grepl("Die Lage am", title)) %>%
+  filter(!startsWith(title,"News")) %>%
+
+  # remove articles that only contain video 
+  filter(!grepl("Video einbetten Nutzungsbedingungen Embedding Tagesschau", title_text)) %>%
+  filter(!grepl("</div>", title_text)) %>%
+  
+  # remove text that mostly contain user comments
+  filter(!startsWith(text,"1.")) %>%
+  
+  # remove articles behind a pay-wall
+  filter(!grepl("SPIEGEL-Plus-Artikel", text)) 
+```
+
+```{r}
+ggplot(df_facebook, aes(site)) +
+  geom_bar(fill = col[3], alpha=0.7) +
+  labs(x="") +
+  theme(axis.text.x = element_text(angle = 60, size=10))
+```
+
+### Remove Stopwords, punctuation, etc.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+clean.text <- function(x)
+  {
+  # All
+  x = gsub("Getty Images", "", x)
+  x = gsub('Startseite[^\n]*', "", x, ignore.case = TRUE, perl = TRUE)
+  x = gsub("deutsche presse agentur","", x, ignore.case = TRUE, perl = TRUE)
+  x = gsub("Eine Kolumne von \\w{1,} \\w{1,}", "", x, ignore.case = T, perl = TRUE)
+
+  # Bild.de
+  x = gsub("Shopübersicht Top Gutscheine", "", x)
+  x = gsub('Politik Inland[^\n]*', "", x, perl = TRUE)
+  
+  # welt.de
+  x = gsub('Quelle: N24[^\n]*', "", x, perl = TRUE)
+  x = gsub('infocom[^\n]*', "", x, perl = TRUE, ignore.case = TRUE)
+  x = gsub('Infografik[^\n]*', "", x, perl = TRUE, ignore.case = TRUE)
+  x = gsub('versuchen Sie es[^.]*', "", x, perl = TRUE, ignore.case = TRUE)
+  x = gsub('Video konnte nicht[^\n]*', "", x, perl = TRUE, ignore.case = TRUE)
+  x = gsub('Welt twitter', "", x, perl = TRUE, ignore.case = TRUE)
+  x = gsub('\\w{1,} für Abonnenten', "", x, perl = TRUE, ignore.case = TRUE)
+
+  # FOCUS.de
+  x = gsub("FOCUS Online", "", x)
+  x = gsub('Wochit[^\n]*', "", x, perl = TRUE, ignore.case = TRUE)
+  x = gsub("Vielen Dank! Ihr Kommentar wurde abgeschickt.", "", x)
+  x = gsub('Im Interesse unserer User[^"]*', "", x, perl = TRUE)
+  x = gsub('Sie haben noch 800[^"]*', "", x, perl = TRUE)
+  x = gsub('Erzählen Sie auf FOCUS Online über Ihren Heimatort Teilen Sie Ihren Artikel und Ihr Foto', "", x, perl = TRUE)
+  x = gsub("Bericht schreiben", "", x)
+  x = gsub("Vielen Dank! Ihr Kommentar wurde abgeschickt.", "", x)
+  x = gsub("Hier können Sie selbst Artikel verfassen:","", x)
+  x = gsub("Live-Ticker", "", x)
+  x = gsub('Aus unserem Netzwerk[^"]*', "", x, perl = TRUE)
+  x = gsub("</div>[^*]*", "", x, perl = TRUE)
+
+  # Spiegel.de
+  x = gsub("7 mal 17", "", x)
+  x = gsub("Zur Startseite Diesen Artikel... Drucken Feedback Nutzungsrechte", "", x)
+  x = gsub('Liebe Leserin, lieber Leser,\num diesen[^"]*', "", x)
+  x = gsub('Liebe Leserin, lieber Leser, um diesen[^"]*', "", x)
+  x = gsub('ejf[^"]*', "", x)
+  x = gsub('tjf[^"]*', "", x)
+  x = gsub('Fotostrecke[^"]*', "", x, perl = TRUE, ignore.case = TRUE)
+  x = gsub('Florian Gathmann[^\n]*', "", x, perl = TRUE)
+  x = gsub('Eine Kolumne von Jan Fleischhauer', "", x, perl = TRUE)
+  x = gsub("Wenig Zeit? Am Textende gibt's eine Zusammenfassung", "", x)
+  x = gsub("Twitter: @\\w{1,} folgen Mehr Artikel von \\w{1,} \\w{1,}", "", x, perl = TRUE)
+
+  # Zeit.de
+  x = gsub("Inhalt Seite", "", x)
+  x = gsub("\\w{1,} \\w{1,} zur Autorenseite", "", x, perl = TRUE)
+  x = gsub('Seitennavig[^"]*',"", x, perl=TRUE)
+  x = gsub('Kartengeschichte[^"]*', "", x, perl = TRUE, ignore.case = TRUE)
+  
+  # Stern.de
+  x = gsub('Fullscreen[^\n]*', "", x, perl = TRUE)
+  
+  # Tagesschau.de
+  x = gsub("Hinweis: Falls die [^\\.]*", "", x, perl=TRUE)
+  x = gsub("auswählen", "", x, perl = TRUE)
+  x = gsub("Dieser Artikel wurde ausgedruckt unter der Adresse: [^\\s]*", "", x, perl = TRUE)
+  x = gsub("faktenfinder.tagesschau.de", "", x, perl=TRUE)
+
+  return(x)
+}
+
+# apply function to dataframe
+df_facebook$text_cleaned <- clean.text(df_facebook$title_text)
+
+df_facebook$text_cleaned <- gsub("[[:punct:]]", " ", df_facebook$text_cleaned)
+df_facebook$text_cleaned <- gsub("[[:cntrl:]]", " ", df_facebook$text_cleaned)
+df_facebook$text_cleaned <- gsub("[[:digit:]]", " ", df_facebook$text_cleaned)
+df_facebook$text_cleaned <- gsub("^[[:space:]]+", " ", df_facebook$text_cleaned)
+df_facebook$text_cleaned <- gsub("[[:space:]]+$", " ", df_facebook$text_cleaned)
+df_facebook$text_cleaned <- tolower(df_facebook$text_cleaned)
+
+## Remove stopwords
+# 1
+german_stopwords_full <- read.table("dict/german_stopwords_full.txt", stringsAsFactors = F)
+german_stopwords_full <- german_stopwords_full$V1
+
+# 2
+mystopwords <- c("focus","online","spiegel", "stern", ".de", "bild","bildplus","n-tv.de", "zeit", "ersten","ard", "tagesschau","müssen","sagen","faktenfinder", "zeitmagazin","seitenanfang","ja","mal","heute","ich","sie","passwort","kommentar","wurde","ihr","der","im","artikel","mehr","ihren","foto","e","seien","comment","ticker","live","laif","uhr","videolänge","dass","mindestens","das","mail","die","schon","neuer abschnitt", "login", "loggen", "inaktiv","nwmi","wäre","viele","nwnoa","morgenkolumne","beim","dpa","video","quelle","afp","witters","fotogalerie","wurden","worden","wegen","sagt","immer","gibt","geht","spon","registrierter","als","spiegel","vielen","in","es","bitte","dank","unserer","nutzer","sei","beitrag","user","seit","zeichen","tba","datenschutzerklärung","premium","nutzungsbedingungen","nutzungsrechte","pflichtfelder","registrierung","anzeige","großbuchstaben","sonderzeichen","html","seitennavigation","fullscreen","statista","club","sagte","borenda","spreepicture","shopübersicht","herr","imago","dobovisek","barenberg","heinlein","armbrüster","kaess","münchenberg","büüsker","tsereteli","konietzny","klenkes","hauptstadtstudio","newsletter","premiumbereich","nachrichtenpodcast","karrierespiegel","picture alliance","appnutzer","civey","abo")
+
+stopwords <- c(german_stopwords_full, mystopwords)
+stopwords <- unique(stopwords)
+
+# 3
+df_facebook$text_cleaned<- removeWords(df_facebook$text_cleaned, stopwords)
+```
+
+### Stemming
+```{r }
+stem_text<- function(text, language = "porter", mc.cores = 1) {
+  # stem each word in a block of text
+  stem_string <- function(str, language) {
+    str <- strsplit(x = str, split = "\\s")
+    str <- SnowballC::wordStem(unlist(str), language = language)
+    str <- paste(str, collapse = " ")
+    return(str)
+  }
+   
+  # stem each text block in turn
+  x <- mclapply(X = text, FUN = stem_string, language, mc.cores = mc.cores)
+   
+  # return stemed text blocks
+  return(unlist(x))
+}
+
+df_facebook$text_cleaned <- stem_text(df_facebook$text_cleaned)
+```
+
+## Term Frequency
+```{r}
+token <- df_facebook %>%
+  group_by(site) %>%
+  unnest_tokens(word, text_cleaned) %>%
+  dplyr::count(site, word, sort = TRUE)  %>%
+  bind_tf_idf(word, site, n) %>%
+  dplyr::arrange(desc(tf_idf))
+
+token %>%
+  arrange(desc(tf)) %>%
+  arrange(site) %>%
+  top_n(10)
+```
+
+### Bigrams
+```{r}
+bigrams <- df_facebook %>%
+  unnest_tokens(bigram, text_cleaned, token="ngrams", n=2)
+
+bigrams %>%
+  group_by(site) %>%
+  count(bigram) %>%
+  arrange(desc(n)) %>%
+  top_n(10)
+```
+
+## Wordcloud
+```{r message=FALSE, warning=FALSE}
+library(quanteda)
+all.corpus <- corpus(df_facebook$text_cleaned)
+df.corpus <- dfm(all.corpus)
+
+textplot_wordcloud(df.corpus, max.word=200,
+                   colors = col)
+```
+
+# SentimentR
+```{r}
+pacman::p_load(sentimentr)
+```
+
+Load dictionary
+
+```{r message=FALSE, warning=FALSE}
+# Load dictionaries (from: http://wortschatz.uni-leipzig.de/de/download)
+neg_df <- read_tsv("dict/SentiWS_v1.8c_Negative.txt", col_names = FALSE)
+pos_df <- read_tsv("dict/SentiWS_v1.8c_Positive.txt", col_names = FALSE)
+
+sentiment_df <- bind_rows(neg_df,pos_df)
+names(sentiment_df) <- c("Wort_POS", "polarity", "Inflektionen")
+
+sentiment_df %>% 
+  mutate(words = str_sub(Wort_POS, 1, regexpr("\\|", .$Wort_POS)-1),
+         words = tolower(words)
+         #POS = str_sub(Wort_POS, start = regexpr("\\|", .$Wort_POS)+1)
+         ) %>%
+  select(words, polarity) -> sentiment_df
+
+sentiment_df <- rbind(sentiment_df, c("nicht",-0.8))
+
+sentiment_df %>% mutate(polarity = as.numeric(polarity)) %>%
+  as_key() -> sentiment_df
+```
+
+We may wish to see the output from sentiment_by line by line with positive/negative sentences highlighted. The highlight function wraps a sentiment_by output to produces a highlighted HTML file (positive = green; negative = pink). Lets have a look at random articles:
+
+```{r}
+df_facebook %>% 
+  group_by(site) %>%
+  sample_n(1) %>%
+  mutate(split = get_sentences(title_text)) %$%
+  sentiment_by(split, site,
+               polarity_dt = sentiment_df) %>%
+  sentimentr::highlight()
+```
+
+Lets apply this on the whole corpus.
+
+```{r}
+sent_df <- df_facebook %>% 
+  mutate(split = get_sentences(title_text)) %$%
+  sentiment(split,
+               polarity_dt = sentiment_df)
+  
+df_facebook$element_id <- as.numeric(rownames(df_facebook))
+df_facebook <- left_join(df_facebook, sent_df %>%
+                        select(element_id, sentiment),
+                      by="element_id")
+```
+
+```{r}
+df_facebook %>%
+  group_by(site) %>%
+  mutate(ave_sentiment = mean(sentiment)) -> plot
+```
+
+```{r}
+p1 <- plot %>%
+  ggplot(aes(sentiment, site, text=title)) +
+  geom_point(color="blue", alpha=.5, shape=1) +
+  geom_point(aes(ave_sentiment, site), color="red", size=2) +
+  xlim(c(-0.3,0.3)) +
+  labs(y="")
+
+plotly::ggplotly(p1)
+```
+
+
+
