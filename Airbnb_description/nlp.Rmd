@@ -1,5 +1,6 @@
 ---
-title: "Using Text Mining To Predict Prices"
+title: "Using Text Mining To Predict Prices - Part 1"
+subtitle: "Data Preparation"
 output:  
   html_document:
     theme: "lumen"
@@ -14,7 +15,6 @@ library(tidytext)
 library(tm)
 library(ggplot2)
 library(ggridges)
-library(stm)         # Sructural Topic Model
 require(quanteda)
 
 rm(list=ls())
@@ -158,7 +158,7 @@ rooms %>%
   labs(y="", x="Rating")
 ```
 
-## (5) Number of Reviews
+## (6) Number of Reviews
 ```{r}
 rooms %>% 
   filter(reviews >= 3) -> rooms
@@ -192,18 +192,21 @@ df <- rooms %>%
 
 # Textdata
 
+Prepare and inspect text data.
+
 ### Languages
+
 ```{r eval=FALSE, include=FALSE}
 library(textcat)
 
 df$language <- textcat(df$fulltext)
 
 df <- df %>% filter(!is.na(language))
-save(df, file = "output/language_df.Rda")
+save(df, file = "output/prep1.Rda")
 ```
 
 ```{r}
-load(file = "output/language_df.Rda")
+load(file = "output/prep1.Rda")
 ```
 
 ```{r fig.height=8, fig.width=4}
@@ -215,12 +218,16 @@ df %>% group_by(language) %>%
   labs(x="",y="")
 ```
 
+Check sample articles if the classification is valid
+
 ```{r}
 df %>%
   sample_n(5) %>%
   select(fulltext, language) %>%
   knitr::kable()
 ```
+
+ok looks good. Lets only keep listings with german and english descriptions.
 
 ```{r}
 df %>%
@@ -252,7 +259,9 @@ df %>%
   theme()
 ```
 
-## Pre-Processing
+## Pre-Processsing
+
+### (1) Remove Punctuation, Numbers, ...
 ```{r}
 df$text_cleaned <- gsub("[[:punct:]]", " ", df$fulltext)
 df$text_cleaned <- gsub("[[:cntrl:]]", " ", df$text_cleaned)
@@ -260,17 +269,49 @@ df$text_cleaned <- gsub("[[:digit:]]", " ", df$text_cleaned)
 df$text_cleaned <- gsub("^[[:space:]]+", " ", df$text_cleaned)
 df$text_cleaned <- gsub("[[:space:]]+$", " ", df$text_cleaned)
 df$text_cleaned <- tolower(df$text_cleaned)
+```
 
+### (2) Remove Stopwords
+```{r}
 df$text_cleaned <- removeWords(df$text_cleaned, stopwords("english"))
 df$text_cleaned <- removeWords(df$text_cleaned, stopwords("german"))
 ```
 
+## Wordclouds
 ```{r}
-df.ger <- df %>% filter(language == "german")
-df.eng <- df %>% filter(language=="english")
+corp <- corpus(df$text_cleaned)
+docvars(corp)<-df$city   #attaching the class labels to the corpus message text
+
+col <- RColorBrewer::brewer.pal(10, "BrBG")  
 ```
 
-## Word-Document Frequency
+### (1) Berlin 
+```{r message=FALSE, warning=FALSE}
+c.plot <- corpus_subset(corp.ger, docvar1=="Berlin")
+c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
+
+textplot_wordcloud(c.plot, min.freq = 250, color = col)
+```
+
+### (2) Hamburg 
+```{r message=FALSE, warning=FALSE}
+c.plot <- corpus_subset(corp.ger, docvar1=="Hamburg")
+c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
+
+textplot_wordcloud(c.plot, min.freq = 250, color = col)
+```
+
+### (3) München 
+```{r message=FALSE, warning=FALSE}
+c.plot <- corpus_subset(corp.ger, docvar1=="München")
+c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
+
+textplot_wordcloud(c.plot, min.freq = 200, color = col)
+```
+
+## Tokenizing
+
+### (1) Unigrams
 ```{r}
 token.df <- df %>%
   tidytext::unnest_tokens(word, text_cleaned) %>%
@@ -279,84 +320,25 @@ token.df <- df %>%
 
 token.df %>% 
   count(word, sort = TRUE) %>%
-  ungroup()
+  ungroup() %>%
+  top_n(20, n) %>%
+  knitr::kable(align="l")
 ```
 
-## Wordclouds
+### (2) Bigrams 
 ```{r}
-corp.ger <- corpus(df$text_cleaned)
-docvars(corp.ger)<-df$city   #attaching the class labels to the corpus message text
+bigram.df <- df %>%
+  unnest_tokens(bigram, text_cleaned, 
+                          token = "ngrams", n=2) 
 
-col <- RColorBrewer::brewer.pal(10, "BrBG")  
-```
-
-### Berlin 
-```{r message=FALSE, warning=FALSE}
-c.plot <- corpus_subset(corp.ger, docvar1=="Berlin")
-c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
-
-textplot_wordcloud(c.plot, min.freq = 250, color = col)
-```
-
-### Hamburg 
-```{r message=FALSE, warning=FALSE}
-c.plot <- corpus_subset(corp.ger, docvar1=="Hamburg")
-c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
-
-textplot_wordcloud(c.plot, min.freq = 250, color = col)
-```
-
-### München 
-```{r message=FALSE, warning=FALSE}
-c.plot <- corpus_subset(corp.ger, docvar1=="München")
-c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
-
-textplot_wordcloud(c.plot, min.freq = 200, color = col)
-```
-
-# Regression
-
-Define input variables
-```{r}
-df.reg1 <- df %>%
-  select(city, price, overall_satisfaction,
-         room_type, bed_type, reviews, accommodates) %>%
-  mutate(city = as.factor(city),
-         room_type = as.factor(room_type),
-         bed_type = as.factor(bed_type),
-         log_price = log(price)) %>%
-  filter(price != 0)
+bigram.df %>% 
+  count(bigram, sort = TRUE) %>%
+  ungroup() %>%
+  top_n(20, n) %>%
+  knitr::kable(align="l")
 ```
 
 ```{r}
-lm.base <- lm(log_price ~ overall_satisfaction + reviews
-              + room_type + bed_type + accommodates
-              + city
-             , data = df.reg1,
-             na.action=na.pass)
-```
-
-```{r}
-summary(lm.base) 
-```
-
-
-```{r}
-df.reg1$predict <- predict(lm.base)
-df.reg1$residuals <- residuals(lm.base)
-```
-
-```{r}
-# Quick look at the actual, predicted, and residual values
-df.reg1 %>%
-  select(log_price, predict, residuals) %>%
-  sample_n(10) %>%
-  knitr::kable(align = "l")
-```
-
-```{r}
-ggplot(df.reg1, aes(x = accommodates, y=log_price)) +
-  geom_point() +
-  geom_point(aes(y=predict), color = "blue", alpha = 0.5)
+save(df, file = "prep2.Rda")
 ```
 
