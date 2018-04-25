@@ -32,6 +32,7 @@ load(file="../output/prep2.Rda")
 Can we improve the model including the description text of the listing on the right-hand side of the model?
 To include text as data, we first have to preprocess it
 
+
 ```{r}
 corp <- Corpus(VectorSource(df$text_cleaned))
 dtm <- DocumentTermMatrix(corp)
