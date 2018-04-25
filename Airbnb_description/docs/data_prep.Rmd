@@ -1,0 +1,344 @@
+---
+title: "Using Text Mining To Predict Prices - Part 1"
+subtitle: "Data Preparation"
+output:  
+  html_document:
+    theme: "lumen"
+    highlight: "tango"
+    code_folding: show
+    self_contained: true
+---
+```{r message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(tidytext)
+library(tm)
+library(ggplot2)
+library(ggridges)
+require(quanteda)
+
+rm(list=ls())
+col <- RColorBrewer::brewer.pal(5, "Dark2")
+
+options(stringsAsFactors = FALSE)
+knitr::opts_chunk$set(message=FALSE, warning=FALSE)
+```
+
+To get a better understanding about how price-setting in the sharing economy works, a wide range of papers have used a hedonic price model to test the consumer valuation of Airbnb listings. In this kind of modelling, structured attributes of the listing often together with attributes of the host are used, to evaluate the source of consumer utility. 
+
+In this study I use a two-stage regression model as proposed by [Abdallah, 2015](https://arxiv.org/abs/1511.04674) that exploits the textual data in listing description to predict the price of a listing.
+
+**Research questions**:
+
+  1. Can the use of textmining improve the accuracy of predicting the price of Airbnb listings?
+  2. Which keywords affect the price of a listing either positively or negatively? 
+  3. Do different keywords have a different effect, depending on the city of the listing?
+  
+**Method**:
+I use two-stage regression model to solve these questions. 
+
+  1. In the first stage of the model only structured features are used to make an initial prediction of the price of the Airbnb listing. 
+  2. The second stage uses the textual features of the same listing to refine the initial prediction. (predict the remaining difference in price between the actual price and the predicted price from Stage-1 regression model)
+
+# Load Data
+
+My base dataset contains information on 47,006 Airbnb listings from seven major German cities, namely Berlin, Munich, Hamburg, Cologne, Dresden, Stuttgart and Frankfurt am Main. Listings were gathered directly from Airbnb's website in September 2017 using a custom web scraper and then processed by extracting the relevant information from the listings' HTML source code. The scraped data entails almost all information that is visible to visitors of an Airbnb listing, including but not limited to prices, accommodation features, reviews and host details.
+
+```{r}
+rooms <- read_csv("../data/room_27_9_17.csv")
+```
+
+A sample description of a 
+```{r}
+rooms %>% sample_n(1) %>%
+  select(description) %>%
+  knitr::kable(align = "l")
+```
+
+
+# Data Preparations
+
+Convert strings to numeric
+```{r}
+rooms <- rooms %>% 
+  mutate(overall_satisfaction = as.numeric(overall_satisfaction),
+         pic_count = as.numeric(pic_count)) %>%
+  filter(!is.na(overall_satisfaction))
+```
+
+## (1) Cities
+
+Keep only listings from the following cities: Hamburg, München, hamburg, Köln, FFM, Dresden, Stuttgart
+```{r}
+## create clean-up function
+create_city <- function(x, city){
+  city_clean <- ifelse(grepl(x, city),x , city) 
+  return(city_clean)
+}
+```
+
+```{r}
+city_list <- c("Hamburg","München","Berlin","Frankfurt","Köln","Stuttgart","Dresden")
+
+for(i in city_list){
+  rooms$city <- create_city(i, rooms$city)
+}
+
+rooms %>%
+  filter(city %in% city_list) -> rooms
+
+rooms %>%
+  group_by(city) %>%
+  tally() %>%
+  ggplot(aes(reorder(city, n, desc),n)) +
+  geom_col(fill = col[3], alpha = 0.8) +
+  labs(x="", y="", title="Count")
+```
+
+## (2) Property Type
+(Wohnung, Haus, Loft, Reihenhaus, Villa)
+
+```{r fig.height=8, fig.width=4, message=FALSE, warning=FALSE}
+rooms %>%
+  group_by(property_type) %>%
+  tally() %>%
+  ggplot(aes(reorder(property_type, n),n)) +
+  geom_col(fill = col[3], alpha = 0.8) +
+  labs(x="", y="", title="Property Types") +
+  coord_flip()
+```
+
+```{r message=FALSE, warning=FALSE}
+rooms %>%
+  filter(property_type == "Wohnung") -> rooms
+```
+
+## (3) Roomtype
+```{r}
+rooms %>%
+  ggplot(aes(room_type)) +
+  geom_bar(fill = col[3], alpha = 0.8) +
+  labs(x="", y="")
+```
+
+## (4) Price
+```{r}
+rooms %>%
+  ggplot(aes(city, price)) +
+  geom_boxplot(outlier.size = 0)
+```
+
+Remove outliers
+```{r}
+rooms %>%
+  filter(price < 1500) -> rooms
+```
+
+```{r}
+rooms$price.cut <- cut(rooms$price, c(seq(0,500,1), Inf))
+
+rooms %>%
+  ggplot(aes(as.numeric(price.cut), factor(city))) +
+  geom_density_ridges(scale = 5,
+                      fill = col[3], alpha = 0.7,
+                      color = "white") +
+  theme_ridges() +
+  scale_x_continuous(expand = c(0, 0), labels = c(seq(0,400,100),">500")) +
+  labs(y="", x="Price")
+```
+
+## (5) Rating
+```{r}
+rooms %>%
+  ggplot(aes(overall_satisfaction, factor(room_type))) +
+  geom_density_ridges(scale = 5,
+                      fill = col[3], alpha = 0.7,
+                      color = "white") +
+  scale_x_continuous(expand = c(0, 0)) +
+  labs(y="", x="Rating")
+```
+
+## (6) Number of Reviews
+```{r}
+rooms %>% 
+  filter(reviews >= 3) -> rooms
+```
+
+```{r}
+rooms$reviews.cut <- cut(rooms$reviews, c(seq(0,50,1), Inf))
+
+rooms %>%
+  ggplot(aes(as.numeric(reviews.cut), factor(city))) +
+  geom_density_ridges(scale = 5,
+                      fill = col[3], alpha = 0.7,
+                      color = "white") +
+  scale_y_discrete(expand = c(0,0)) +
+  scale_x_continuous(expand = c(0,0),
+                     breaks = c(seq(0,50,10)),
+                     labels = c(seq(0,40,10),">50")) +
+  labs(y="", x="Number of Reviews")
+```
+
+## Final dataframe
+```{r}
+df <- rooms %>% 
+  select(room_id, name, 
+         description, city, price, overall_satisfaction,
+         room_type, bed_type, pic_count,
+         reviews, accommodates, bedrooms, minstay,
+         latitude, longitude) %>%
+  mutate(fulltext = paste(name, description, sep=" "))
+```
+
+# Textdata
+
+Prepare and inspect text data.
+
+### Languages
+
+```{r eval=FALSE, include=FALSE}
+library(textcat)
+
+df$language <- textcat(df$fulltext)
+
+df <- df %>% filter(!is.na(language))
+save(df, file = "../output/prep1.Rda")
+```
+
+```{r}
+load(file = "../output/prep1.Rda")
+```
+
+```{r fig.height=8, fig.width=4}
+df %>% group_by(language) %>% 
+  tally() %>%
+  ggplot(aes(reorder(language, n),n)) +
+  geom_col(fill = col[3], alpha = 0.7) +
+  coord_flip() +
+  labs(x="",y="")
+```
+
+Check sample articles if the classification is valid
+
+```{r}
+df %>%
+  sample_n(5) %>%
+  select(fulltext, language) %>%
+  knitr::kable()
+```
+
+ok looks good. Lets only keep listings with german and english descriptions.
+
+```{r}
+df %>%
+  filter(language %in% c("german","english")) -> df
+```
+
+```{r}
+ggplot(df, aes(x=factor(city))) +
+  geom_bar(aes(fill = language),
+           alpha = 0.8) +
+  labs(x="", y="", fill="")
+```
+
+### Word count
+```{r}
+df$text_length <- sapply(gregexpr("\\S+", df$fulltext), length)
+```
+
+```{r}
+df$text_length.cut <- cut(df$text_length, c(seq(0,150,1),Inf))
+
+df %>%
+  ggplot(aes(as.numeric(text_length.cut), factor(city))) +
+  geom_density_ridges(aes(fill = language),
+                      color = "white", alpha = 0.8) +
+  scale_x_continuous(expand = c(0,0), 
+                     labels = c(seq(0,100,50),">150")) +
+  labs(y = "", x = "Word Count", fill= "") +
+  theme()
+```
+
+## Pre-Processsing
+
+### (1) Remove Punctuation, Numbers, ...
+```{r}
+df$text_cleaned <- gsub("[[:punct:]]", " ", df$fulltext)
+df$text_cleaned <- gsub("[[:cntrl:]]", " ", df$text_cleaned)
+df$text_cleaned <- gsub("[[:digit:]]", " ", df$text_cleaned)
+df$text_cleaned <- gsub("^[[:space:]]+", " ", df$text_cleaned)
+df$text_cleaned <- gsub("[[:space:]]+$", " ", df$text_cleaned)
+df$text_cleaned <- tolower(df$text_cleaned)
+```
+
+### (2) Remove Stopwords
+```{r}
+df$text_cleaned <- removeWords(df$text_cleaned, stopwords("english"))
+df$text_cleaned <- removeWords(df$text_cleaned, stopwords("german"))
+```
+
+## Wordclouds
+```{r}
+corp <- corpus(df$text_cleaned)
+docvars(corp)<-df$city   #attaching the class labels to the corpus message text
+
+col <- RColorBrewer::brewer.pal(10, "BrBG")  
+```
+
+### (1) Berlin 
+```{r message=FALSE, warning=FALSE}
+c.plot <- corpus_subset(corp, docvar1=="Berlin")
+c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
+
+textplot_wordcloud(c.plot, min.freq = 250, color = col)
+```
+
+### (2) Hamburg 
+```{r message=FALSE, warning=FALSE}
+c.plot <- corpus_subset(corp, docvar1=="Hamburg")
+c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
+
+textplot_wordcloud(c.plot, min.freq = 250, color = col)
+```
+
+### (3) München 
+```{r message=FALSE, warning=FALSE}
+c.plot <- corpus_subset(corp, docvar1=="München")
+c.plot<-dfm(c.plot, tolower = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
+
+textplot_wordcloud(c.plot, min.freq = 200, color = col)
+```
+
+## Tokenizing
+
+### (1) Unigrams
+```{r}
+token.df <- df %>%
+  tidytext::unnest_tokens(word, text_cleaned) %>%
+  filter(nchar(word) > 1) %>%
+  filter(nchar(word) < 30)
+
+token.df %>% 
+  count(word, sort = TRUE) %>%
+  ungroup() %>%
+  top_n(20, n) %>%
+  knitr::kable(align="l")
+```
+
+### (2) Bigrams 
+```{r}
+bigram.df <- df %>%
+  unnest_tokens(bigram, text_cleaned, 
+                          token = "ngrams", n=2) 
+
+bigram.df %>% 
+  count(bigram, sort = TRUE) %>%
+  ungroup() %>%
+  top_n(20, n) %>%
+  knitr::kable(align="l")
+```
+
+```{r}
+save(df, file = "../output/prep2.Rda")
+```
+
