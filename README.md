@@ -21,6 +21,6 @@ This repo contains an overview about my projects using NLP / everything that has
 
 Other projects in which I work with text data: 
 
-* [Text mining for economists.](https://github.com/franziloew/textmining/tree/gh-pages) Including the state-of-art of my current Paper [Topic and tone of political news articles in German online media.](https://franziloew.github.io/textmining/docs/04_Modelresults_50.html) 
+* [Text mining for economists.](https://github.com/franziloew/textmining/tree/gh-pages) Including the state-of-art of my current Paper [Topic and tone of political news articles in German online media.](https://franziloew.github.io/textmining/paper/docs/04_Modelresults_50.html) 
 
 * [Politsentiment (R)](https://github.com/franziloew/politsentiment): Analysing Tweets about German political topics (Repo is in German). 
