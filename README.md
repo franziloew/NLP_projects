@@ -1,15 +1,20 @@
 # Natural Language Processing 
 
-This repo contains some smaller projects using NLP / everything that has to do with the processing of text data.
+This repo contains an overview about my projects using NLP / everything that has to do with the processing of text data.
 
 1. Airbnb reviews (PySpark): In this project I am experimenting with the Apache Spark Framwork for Python (PySpark). I analyse the written reviews of Airbnb Listings in Barcelona. The data comes from the [Inside Airbnb](http://insideairbnb.com/get-the-data.html) project and is freely available. 
 
-2. Airbnb description (R): I am curious if the description texts of the Airbnb listings can be used to predict the prices of these listings. In this project I try to integrate the text data into the hedonic price estimation. 
+2. [Airbnb description (R)](https://github.com/franziloew/airbnb_textmining): I am curious if the description texts of the Airbnb listings can be used to predict the prices of these listings. In this project I try to integrate the text data into the hedonic price estimation. 
+
+[Part 1: Data Preparations](https://franziloew.github.io/airbnb_textmining/data_prep.html)
+[Part 2: Model 1](https://franziloew.github.io/airbnb_textmining/linreg.html)
+[Part 3: Model 2](https://franziloew.github.io/airbnb_textmining/linreg_text.html)
+
 		
 	Next Steps:
-		- Decide how deal with very common words (Wohnung, Apartment, Room...)
-		- Differentiate between english and german text? 
-		- Estimate 2-stage Linear Regression similar to [Abdallah, 2015](https://arxiv.org/abs/1511.04674) 
+		- Estimate and predict prices using Linear Regression: structured attributes
+		- Estimate and predict prices using Penalized Linear Regression: Text features
+		- Compare results
 		- Transfering project to PySpark? 
 
 3. Searchengine Keywords (R): I use the search traffic share of keywords to get an idea of the similarity of news provider websites. The search traffic share is the percentage of organic search referrals to this site that come from this keyword. Data comes from [Alexa.com](https://www.alexa.com/) and is not freely available.
