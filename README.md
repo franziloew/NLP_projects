@@ -10,12 +10,6 @@ This repo contains an overview about my projects using NLP / everything that has
 [Part 2: Model 1](https://franziloew.github.io/airbnb_textmining/linreg.html)
 [Part 3: Model 2](https://franziloew.github.io/airbnb_textmining/linreg_text.html)
 
-		
-	Next Steps:
-		- Estimate and predict prices using Linear Regression: structured attributes
-		- Estimate and predict prices using Penalized Linear Regression: Text features
-		- Compare results
-		- Transfering project to PySpark? 
 
 3. Searchengine Keywords (R): I use the search traffic share of keywords to get an idea of the similarity of news provider websites. The search traffic share is the percentage of organic search referrals to this site that come from this keyword. Data comes from [Alexa.com](https://www.alexa.com/) and is not freely available.
 
@@ -25,6 +19,6 @@ This repo contains an overview about my projects using NLP / everything that has
 
 Other projects in which I work with text data: 
 
-* [Text mining for economists.](https://github.com/franziloew/textmining/tree/gh-pages) Including the state-of-art of my current Paper "[Topic and tone of political news articles in German online media.]"(https://franziloew.github.io/textmining/paper/docs/04_Modelresults_50.html) 
+* [Text mining for economists.](https://github.com/franziloew/textmining/tree/gh-pages) Including the state-of-art of my current Paper [Topic and tone of political news articles in German online media.](https://franziloew.github.io/textmining/docs/04_Modelresults_50.html) 
 
 * [Politsentiment (R)](https://github.com/franziloew/politsentiment): Analysing Tweets about German political topics (Repo is in German). 
