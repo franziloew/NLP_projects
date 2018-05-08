@@ -7,7 +7,9 @@ This repo contains an overview about my projects using NLP / everything that has
 2. [Airbnb description (R)](https://github.com/franziloew/airbnb_textmining): I am curious if the description texts of the Airbnb listings can be used to predict the prices of these listings. In this project I try to integrate the text data into the hedonic price estimation. 
 
 [Part 1: Data Preparations](https://franziloew.github.io/airbnb_textmining/data_prep.html)
+
 [Part 2: Model 1](https://franziloew.github.io/airbnb_textmining/linreg.html)
+
 [Part 3: Model 2](https://franziloew.github.io/airbnb_textmining/linreg_text.html)
 
 
